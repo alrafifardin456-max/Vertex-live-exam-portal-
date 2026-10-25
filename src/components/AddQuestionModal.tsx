@@ -26,7 +26,9 @@ import {
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  onAdded?: () => void;
   onQuestionAdded: () => void;
+  prefill?: { subject: Subject; chapter?: string };
   initialSubject?: Subject;
   initialChapter?: string;
 }
@@ -34,7 +36,9 @@ interface Props {
 export const AddQuestionModal: React.FC<Props> = ({
   isOpen,
   onClose,
+  onAdded,
   onQuestionAdded,
+  prefill,
   initialSubject,
   initialChapter,
 }) => {
@@ -42,8 +46,11 @@ export const AddQuestionModal: React.FC<Props> = ({
   const [activeTab, setActiveTab] = useState<'gemini_direct' | 'smart_paste' | 'manual'>('gemini_direct');
 
   // Manual Form States
-  const [subject, setSubject] = useState<Subject>(initialSubject || 'physics');
-  const [chapter, setChapter] = useState(initialChapter || '');
+  const effectiveSubject = prefill?.subject || initialSubject || 'physics';
+  const effectiveChapter = prefill?.chapter || initialChapter || '';
+
+  const [subject, setSubject] = useState<Subject>(effectiveSubject);
+  const [chapter, setChapter] = useState(effectiveChapter);
   const [stem, setStem] = useState('');
   const [options, setOptions] = useState<[string, string, string, string]>(['', '', '', '']);
   const [correctAnswer, setCorrectAnswer] = useState<number>(0);
@@ -59,8 +66,8 @@ export const AddQuestionModal: React.FC<Props> = ({
 
   // Gemini Direct Prompt State (Default 35 questions full set!)
   const [userGeminiPrompt, setUserGeminiPrompt] = useState(
-    initialChapter
-      ? `বিষয় ও '${initialChapter}' অধ্যায় থেকে ২০২৬-২৭ সেশনের ভর্তি পরীক্ষার অনুরূপ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো`
+    effectiveChapter
+      ? `বিষয় ও '${effectiveChapter}' অধ্যায় থেকে ২০২৬-২৭ সেশনের ভর্তি পরীক্ষার অনুরূপ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো`
       : 'পদার্থবিজ্ঞান ও রসায়ন থেকে ভর্তি পরীক্ষার অনুরূপ পূর্ণাঙ্গ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো'
   );
   const [geminiCount, setGeminiCount] = useState<number>(35);
@@ -82,13 +89,15 @@ export const AddQuestionModal: React.FC<Props> = ({
 
   useEffect(() => {
     if (isOpen) {
-      if (initialSubject) {
-        setSubject(initialSubject);
+      const sub = prefill?.subject || initialSubject;
+      const chap = prefill?.chapter || initialChapter;
+      if (sub) {
+        setSubject(sub);
       }
-      if (initialChapter) {
-        setChapter(initialChapter);
-        const subName = subjectNames[initialSubject || subject] || 'বিজ্ঞান';
-        setUserGeminiPrompt(`${subName} বিষয়ের '${initialChapter}' অধ্যায় থেকে ২০২৬-২৭ সেশনের ভর্তি পরীক্ষার অনুরূপ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো`);
+      if (chap) {
+        setChapter(chap);
+        const subName = subjectNames[sub || subject] || 'বিজ্ঞান';
+        setUserGeminiPrompt(`${subName} বিষয়ের '${chap}' অধ্যায় থেকে ২০২৬-২৭ সেশনের ভর্তি পরীক্ষার অনুরূপ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো`);
       } else {
         setChapter('');
         setUserGeminiPrompt('পদার্থবিজ্ঞান ও রসায়ন থেকে ভর্তি পরীক্ষার অনুরূপ পূর্ণাঙ্গ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো');
@@ -98,7 +107,7 @@ export const AddQuestionModal: React.FC<Props> = ({
       setPastedRawText('');
       setPasteFeedback(null);
     }
-  }, [isOpen, initialSubject, initialChapter]);
+  }, [isOpen, prefill, initialSubject, initialChapter]);
 
   if (!isOpen) return null;
 
@@ -108,6 +117,12 @@ export const AddQuestionModal: React.FC<Props> = ({
     setOptions(updated);
   };
 
+  const handleSuccessAction = () => {
+    if (onQuestionAdded) onQuestionAdded();
+    if (onAdded) onAdded();
+    onClose();
+  };
+
   // Smart parse pasted text (detects single or up to 35 bulk questions)
   const handleParsePastedText = () => {
     if (!pastedRawText.trim()) {
@@ -115,7 +130,6 @@ export const AddQuestionModal: React.FC<Props> = ({
       return;
     }
 
-    // Try bulk parsing first
     const bulkResults = parseBulkQuestionsText(pastedRawText, subject, chapter || 'সাধারণ এডমিশন টপিক', universityTag);
     if (bulkResults.length > 1) {
       setParsedBulkQuestions(bulkResults);
@@ -123,7 +137,6 @@ export const AddQuestionModal: React.FC<Props> = ({
       return;
     }
 
-    // Single question fallback
     const parsed = parsePastedQuestionText(pastedRawText);
     if (!parsed) {
       setPasteFeedback('টেক্সট পার্স করতে সমস্যা হয়েছে। অনুগ্রহ করে প্রশ্ন ও অপশনগুলো স্পষ্ট করে দিন।');
@@ -142,7 +155,6 @@ export const AddQuestionModal: React.FC<Props> = ({
     setActiveTab('manual');
   };
 
-  // Save all bulk parsed questions (e.g. 35 questions)
   const handleSaveAllBulkQuestions = () => {
     if (parsedBulkQuestions.length === 0) return;
     parsedBulkQuestions.forEach(q => {
@@ -156,12 +168,10 @@ export const AddQuestionModal: React.FC<Props> = ({
     setNotification(`অভিনন্দন! একসাথে ${parsedBulkQuestions.length}টি প্রশ্নই সরাসরি প্রশ্ন ব্যাংকে যুক্ত হয়েছে!`);
     setTimeout(() => {
       setNotification(null);
-      onQuestionAdded();
-      onClose();
+      handleSuccessAction();
     }, 1500);
   };
 
-  // Directly save all generated questions to bank (e.g. 35 questions)
   const handleSaveAllGenerated = () => {
     generatedQuestions.forEach(q => {
       saveCustomQuestion({
@@ -174,12 +184,10 @@ export const AddQuestionModal: React.FC<Props> = ({
     setNotification(`অভিনন্দন! একসাথে ${generatedQuestions.length}টি প্রশ্নই সরাসরি প্রশ্ন ব্যাংকে যুক্ত হয়েছে!`);
     setTimeout(() => {
       setNotification(null);
-      onQuestionAdded();
-      onClose();
+      handleSuccessAction();
     }, 1500);
   };
 
-  // Ask Gemini with natural Bengali prompt for up to 35 questions
   const handleAskGemini = async () => {
     if (!userGeminiPrompt.trim()) return;
     setIsGeminiLoading(true);
@@ -200,7 +208,6 @@ export const AddQuestionModal: React.FC<Props> = ({
       const data = await resp.json().catch(() => null);
 
       if (resp.ok && data && data.questions && data.questions.length > 0) {
-        // Enforce strict stem-based uniqueness
         const seenStems = new Set<string>();
         const uniqueQs: Question[] = [];
         for (const q of data.questions) {
@@ -231,7 +238,6 @@ export const AddQuestionModal: React.FC<Props> = ({
     }
   };
 
-  // Copy standard prompt template to use on external gemini.google.com for 35 questions
   const handleCopyGeminiPrompt = () => {
     const promptTemplate = `তুমি শীর্ষ ভর্তি পরীক্ষার সিনিয়র প্রশ্ন প্রণেতা।
 আমার জন্য ২০২৬-২৭ সেশনের ভর্তি পরীক্ষার অনুরূপ পূর্ণাঙ্গ ৩৫টি প্রশ্ন (MCQ) তৈরি করো।
@@ -255,7 +261,6 @@ export const AddQuestionModal: React.FC<Props> = ({
     setTimeout(() => setCopiedPrompt(false), 2500);
   };
 
-  // Submit manual form
   const handleSubmitManual = (e: React.FormEvent) => {
     e.preventDefault();
     if (!stem.trim()) {
@@ -290,12 +295,182 @@ export const AddQuestionModal: React.FC<Props> = ({
     setNotification('প্রশ্ন সফলভাবে এডমিশন প্রশ্ন ব্যাংকে যুক্ত হয়েছে!');
     setTimeout(() => {
       setNotification(null);
-      onQuestionAdded();
-      onClose();
+      handleSuccessAction();
     }, 1200);
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-      <div className="relative w-full max-w-4xl rounded-3xl glass-panel-elevated neon-border-violet shadow-2
-         
+      <div className="relative w-full max-w-4xl rounded-3xl glass-panel-elevated neon-border-violet shadow-2xl p-5 sm:p-7 text-white my-8 max-h-[90vh] overflow-y-auto">
+        <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-cyan-400 via-fuchsia-500 to-emerald-400" />
+
+        <div className="flex items-center justify-between pb-4 border-b border-violet-500/20">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-400 via-teal-400 to-emerald-400 text-slate-950 flex items-center justify-center shadow-lg shadow-cyan-500/30">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-extrabold text-base sm:text-lg text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-white to-pink-200">
+                  {chapter ? `'${chapter}' অধ্যায়ে প্রশ্ন যোগ করুন (AQ)` : 'একসাথে ৩৫টি প্রশ্ন এড ও জিমিনি এআই জেনারেটর'}
+                </h3>
+                {chapter ? (
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-violet-500/20 text-cyan-300 border border-cyan-500/40 flex items-center gap-1 shadow-sm">
+                    <span>📌 অধ্যায়: {chapter} ({subjectNames[subject] || 'বিজ্ঞান'})</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    ৩৫ প্রশ্ন বাল্ক মোড
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                {chapter 
+                  ? `${subjectNames[subject] || 'বিজ্ঞান'} বিষয়ের '${chapter}' অধ্যায়ের জন্য জিমিনি দিয়ে ৩৫টি প্রশ্ন তৈরি করুন অথবা পেস্ট করুন`
+                  : 'জিমিনিকে বলে এক ক্লিকে পূর্ণাঙ্গ ৩৫টি প্রশ্ন তৈরি করুন অথবা ৩৫টি প্রশ্নের টেক্সট একবারে পেস্ট করুন'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {notification && (
+          <div className="my-4 p-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold text-center animate-in fade-in shadow-sm shadow-emerald-500/20">
+            {notification}
+          </div>
+        )}
+
+        <div className="grid grid-cols-3 gap-1.5 p-1.5 rounded-2xl glass-panel border border-violet-500/30 my-4 text-xs font-bold">
+          <button
+            onClick={() => setActiveTab('gemini_direct')}
+            className={`py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              activeTab === 'gemini_direct'
+                ? 'bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 font-black shadow-md shadow-emerald-500/30'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <Wand2 className="w-4 h-4" />
+            <span>জিমিনি ৩৫ প্রশ্ন জেনারেটর</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('smart_paste')}
+            className={`py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              activeTab === 'smart_paste'
+                ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black shadow-md shadow-cyan-500/30'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <ClipboardPaste className="w-4 h-4" />
+            <span>একসাথে ৩৫ প্রশ্ন পেস্ট</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('manual')}
+            className={`py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              activeTab === 'manual'
+                ? 'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white font-black shadow-md shadow-purple-500/30'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>একক প্রশ্ন ফর্ম</span>
+          </button>
+        </div>
+
+        {activeTab === 'gemini_direct' && (
+          <div className="space-y-4 text-xs">
+            <div>
+              <div className="text-[11px] text-slate-400 mb-1.5 font-medium">ক্লিক করে ৩৫ প্রশ্নের রেডিমেড নির্দেশ বাছুন:</div>
+              <div className="flex flex-wrap gap-1.5">
+                {(chapter ? [
+                  `'${chapter}' অধ্যায়ের সর্বোচ্চ কমন ৩৫টি প্রশ্ন`,
+                  `'${chapter}' অধ্যায় থেকে স্ট্যান্ডার্ড প্যাটার্নের ৩৫টি প্রশ্ন`,
+                  `'${chapter}' শর্টকাট ও ট্রিকি প্রশ্নমালা`,
+                  `'${chapter}' বিগত বছরের স্ট্যান্ডার্ড প্রশ্নমালা`
+                ] : [
+                  'পদার্থবিজ্ঞান ও রসায়ন পূর্ণাঙ্গ বিজ্ঞানের ৩৫টি প্রশ্ন',
+                  'উচ্চতর গণিত ও জীববিজ্ঞান স্পেশাল ৩৫টি প্রশ্ন',
+                  'কমন সিলেবাসভিত্তিক পূর্ণাঙ্গ মডেল টেস্টের ৩৫টি প্রশ্ন',
+                  'উচ্চতর গণিত ক্যালকুলাস ও সরলরেখা থেকে ৩৫টি প্রশ্ন',
+                  'জীববিজ্ঞান ও রসায়ন স্পেশাল ৩৫টি প্রশ্ন'
+                ]).map((chip, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setUserGeminiPrompt(chip + ' তৈরি করো')}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] transition-colors cursor-pointer"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-indigo-950/60 to-purple-950/60 border border-indigo-500/30">
+              <label className="block text-indigo-200 font-bold mb-1.5 text-sm flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-indigo-400" />
+                <span>জিমিনিকে আপনার নির্দেশ দিন:</span>
+              </label>
+              <textarea
+                rows={3}
+                value={userGeminiPrompt}
+                onChange={e => setUserGeminiPrompt(e.target.value)}
+                placeholder="যেমন: গতিবিদ্যা ও গুণগত রসায়ন থেকে ৩৫টি প্রশ্ন অপশন ও ব্যাখ্যাসহ বানাও..."
+                className="w-full p-3 rounded-xl bg-slate-900 border border-indigo-500/40 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400 text-xs sm:text-sm leading-relaxed"
+              />
+
+              <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400 font-medium">প্রশ্নের সংখ্যা:</span>
+                  {[35, 15, 5, 3].map(cnt => (
+                    <button
+                      key={cnt}
+                      type="button"
+                      onClick={() => setGeminiCount(cnt)}
+                      className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
+                        geminiCount === cnt
+                          ? 'bg-emerald-500 text-slate-950 shadow-md'
+                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {cnt === 35 ? '🔥 ৩৫টি (পূর্ণাঙ্গ টেস্ট)' : `${cnt}টি`}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyGeminiPrompt}
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold flex items-center gap-1 cursor-pointer"
+                    title="বাইরের জিমিনির জন্য ৩৫ প্রশ্নের প্রম্পট কপি"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copiedPrompt ? 'কপি হয়েছে!' : '৩৫ প্রশ্নের প্রম্পট কপি'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleAskGemini}
+                    disabled={isGeminiLoading}
+                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>{isGeminiLoading ? 'জিমিনি তৈরি করছে...' : `একসাথে ${geminiCount}টি প্রশ্ন তৈরি করুন`}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {generatedQuestions.length > 0 && (
+              <div className="space-y-3 pt-2">
+                <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between gap-3 shadow-lg">
+                  <div>
+                    <h4 className="font-extrabold text-white text-sm flex items-center gap-1.5">
+                      <Check
