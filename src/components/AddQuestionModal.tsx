@@ -1,184 +1,301 @@
-import React, { useState } from 'react';
-import { Subject, University, Question } from '../types/exam';
+import React, { useState, useEffect } from 'react';
+import { Question, Subject, University } from '../types/exam';
 import { saveCustomQuestion } from '../services/questionService';
-import { X, PlusCircle, CheckCircle2 } from 'lucide-react';
+import { parsePastedQuestionText, parseBulkQuestionsText, stripOptionPrefix } from '../utils/questionParser';
+import { CHAPTERS_DATA } from '../data/chaptersData';
+import {
+  X,
+  PlusCircle,
+  Sparkles,
+  CheckCircle2,
+  FileText,
+  HelpCircle,
+  Lightbulb,
+  Zap,
+  BookOpen,
+  ClipboardPaste,
+  Copy,
+  Send,
+  Wand2,
+  ArrowRight,
+  Flame,
+  Layers,
+  CheckCheck
+} from 'lucide-react';
 
 interface Props {
-  prefill?: { subject: Subject; chapter?: string };
+  isOpen: boolean;
   onClose: () => void;
-  onAdded: () => void;
+  onQuestionAdded: () => void;
+  initialSubject?: Subject;
+  initialChapter?: string;
 }
 
-export const AddQuestionModal: React.FC<Props> = ({ prefill, onClose, onAdded }) => {
-  const [subject, setSubject] = useState<Subject>(prefill?.subject || 'physics');
-  const [chapter, setChapter] = useState(prefill?.chapter || '');
+export const AddQuestionModal: React.FC<Props> = ({
+  isOpen,
+  onClose,
+  onQuestionAdded,
+  initialSubject,
+  initialChapter,
+}) => {
+  // Tabs: 'gemini_direct' | 'smart_paste' | 'manual'
+  const [activeTab, setActiveTab] = useState<'gemini_direct' | 'smart_paste' | 'manual'>('gemini_direct');
+
+  // Manual Form States
+  const [subject, setSubject] = useState<Subject>(initialSubject || 'physics');
+  const [chapter, setChapter] = useState(initialChapter || '');
   const [stem, setStem] = useState('');
-  const [optA, setOptA] = useState('');
-  const [optB, setOptB] = useState('');
-  const [optC, setOptC] = useState('');
-  const [optD, setOptD] = useState('');
+  const [options, setOptions] = useState<[string, string, string, string]>(['', '', '', '']);
   const [correctAnswer, setCorrectAnswer] = useState<number>(0);
+  const [universityTag, setUniversityTag] = useState("ভর্তি পরীক্ষা স্পেশাল");
   const [explanation, setExplanation] = useState('');
-  const [university, setUniversity] = useState<University>('DU');
-  const [successMsg, setSuccessMsg] = useState(false);
+  const [shortcutTip, setShortcutTip] = useState('');
+  const [difficulty, setDifficulty] = useState<'সহজ' | 'মাঝারি' | 'মানসম্মত ভর্তি পরীক্ষা'>('মানসম্মত ভর্তি পরীক্ষা');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Smart Paste State
+  const [pastedRawText, setPastedRawText] = useState('');
+  const [pasteFeedback, setPasteFeedback] = useState<string | null>(null);
+  const [parsedBulkQuestions, setParsedBulkQuestions] = useState<Question[]>([]);
+
+  // Gemini Direct Prompt State (Default 35 questions full set!)
+  const [userGeminiPrompt, setUserGeminiPrompt] = useState(
+    initialChapter
+      ? `বিষয় ও '${initialChapter}' অধ্যায় থেকে ২০২৬-২৭ সেশনের ভর্তি পরীক্ষার অনুরূপ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো`
+      : 'পদার্থবিজ্ঞান ও রসায়ন থেকে ভর্তি পরীক্ষার অনুরূপ পূর্ণাঙ্গ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো'
+  );
+  const [geminiCount, setGeminiCount] = useState<number>(35);
+  const [isGeminiLoading, setIsGeminiLoading] = useState(false);
+  const [generatedQuestions, setGeneratedQuestions] = useState<Question[]>([]);
+
+  const [notification, setNotification] = useState<string | null>(null);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+
+  const subjectNames: Record<Subject, string> = {
+    physics: 'পদার্থবিজ্ঞান',
+    chemistry: 'রসায়ন',
+    math: 'উচ্চতর গণিত',
+    biology: 'জীববিজ্ঞান',
+    bangla: 'বাংলা',
+    english: 'ইংরেজি',
+    ict_gk: 'আইসিটি ও সাধারণ জ্ঞান',
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      if (initialSubject) {
+        setSubject(initialSubject);
+      }
+      if (initialChapter) {
+        setChapter(initialChapter);
+        const subName = subjectNames[initialSubject || subject] || 'বিজ্ঞান';
+        setUserGeminiPrompt(`${subName} বিষয়ের '${initialChapter}' অধ্যায় থেকে ২০২৬-২৭ সেশনের ভর্তি পরীক্ষার অনুরূপ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো`);
+      } else {
+        setChapter('');
+        setUserGeminiPrompt('পদার্থবিজ্ঞান ও রসায়ন থেকে ভর্তি পরীক্ষার অনুরূপ পূর্ণাঙ্গ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো');
+      }
+      setParsedBulkQuestions([]);
+      setGeneratedQuestions([]);
+      setPastedRawText('');
+      setPasteFeedback(null);
+    }
+  }, [isOpen, initialSubject, initialChapter]);
+
+  if (!isOpen) return null;
+
+  const handleOptionChange = (index: number, val: string) => {
+    const updated = [...options] as [string, string, string, string];
+    updated[index] = val;
+    setOptions(updated);
+  };
+
+  // Smart parse pasted text (detects single or up to 35 bulk questions)
+  const handleParsePastedText = () => {
+    if (!pastedRawText.trim()) {
+      setPasteFeedback('অনুগ্রহ করে জিমিনির টেক্সট বা অপশনগুলো পেস্ট করুন।');
+      return;
+    }
+
+    // Try bulk parsing first
+    const bulkResults = parseBulkQuestionsText(pastedRawText, subject, chapter || 'সাধারণ এডমিশন টপিক', universityTag);
+    if (bulkResults.length > 1) {
+      setParsedBulkQuestions(bulkResults);
+      setPasteFeedback(`সফলভাবে একসাথে ${bulkResults.length}টি প্রশ্ন চিহ্নিত করা হয়েছে! নিচে দেখে সেভ করুন।`);
+      return;
+    }
+
+    // Single question fallback
+    const parsed = parsePastedQuestionText(pastedRawText);
+    if (!parsed) {
+      setPasteFeedback('টেক্সট পার্স করতে সমস্যা হয়েছে। অনুগ্রহ করে প্রশ্ন ও অপশনগুলো স্পষ্ট করে দিন।');
+      return;
+    }
+
+    setStem(parsed.stem);
+    setOptions(parsed.options);
+    setCorrectAnswer(parsed.correctAnswer);
+    setExplanation(parsed.explanation);
+    if (parsed.shortcutTip) setShortcutTip(parsed.shortcutTip);
+    if (parsed.chapter) setChapter(parsed.chapter);
+    if (parsed.subject) setSubject(parsed.subject);
+
+    setPasteFeedback('সফলভাবে পার্স করা হয়েছে! নিচে ফর্মটি স্বয়ংক্রিয়ভাবে পূরণ হয়ে গেছে।');
+    setActiveTab('manual');
+  };
+
+  // Save all bulk parsed questions (e.g. 35 questions)
+  const handleSaveAllBulkQuestions = () => {
+    if (parsedBulkQuestions.length === 0) return;
+    parsedBulkQuestions.forEach(q => {
+      saveCustomQuestion({
+        ...q,
+        subject: subject || q.subject,
+        subjectBangla: subjectNames[subject] || q.subjectBangla || 'পদার্থবিজ্ঞান',
+        chapter: chapter || q.chapter || 'সাধারণ এডমিশন টপিক',
+      });
+    });
+    setNotification(`অভিনন্দন! একসাথে ${parsedBulkQuestions.length}টি প্রশ্নই সরাসরি প্রশ্ন ব্যাংকে যুক্ত হয়েছে!`);
+    setTimeout(() => {
+      setNotification(null);
+      onQuestionAdded();
+      onClose();
+    }, 1500);
+  };
+
+  // Directly save all generated questions to bank (e.g. 35 questions)
+  const handleSaveAllGenerated = () => {
+    generatedQuestions.forEach(q => {
+      saveCustomQuestion({
+        ...q,
+        subject: subject || q.subject,
+        subjectBangla: subjectNames[subject] || q.subjectBangla || 'পদার্থবিজ্ঞান',
+        chapter: chapter || q.chapter || 'সাধারণ এডমিশন টপিক',
+      });
+    });
+    setNotification(`অভিনন্দন! একসাথে ${generatedQuestions.length}টি প্রশ্নই সরাসরি প্রশ্ন ব্যাংকে যুক্ত হয়েছে!`);
+    setTimeout(() => {
+      setNotification(null);
+      onQuestionAdded();
+      onClose();
+    }, 1500);
+  };
+
+  // Ask Gemini with natural Bengali prompt for up to 35 questions
+  const handleAskGemini = async () => {
+    if (!userGeminiPrompt.trim()) return;
+    setIsGeminiLoading(true);
+    setNotification(`জিমিনি আপনার জন্য সম্পূর্ণ ইউনিক ${geminiCount}টি প্রশ্ন তৈরি করছে... এতে ২০-৩০ সেকেন্ড সময় লাগতে পারে, প্রতিটি প্রশ্ন স্বতন্ত্র হবে।`);
+
+    try {
+      const resp = await fetch('/api/generate-from-user-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userPrompt: userGeminiPrompt.trim(),
+          count: geminiCount,
+          subject,
+          chapter,
+        }),
+      });
+
+      const data = await resp.json().catch(() => null);
+
+      if (resp.ok && data && data.questions && data.questions.length > 0) {
+        // Enforce strict stem-based uniqueness
+        const seenStems = new Set<string>();
+        const uniqueQs: Question[] = [];
+        for (const q of data.questions) {
+          const stemKey = (q.stem || '').trim().toLowerCase();
+          if (!stemKey || seenStems.has(stemKey)) continue;
+          seenStems.add(stemKey);
+          uniqueQs.push({
+            ...q,
+            subject: subject || q.subject,
+            subjectBangla: subjectNames[subject] || q.subjectBangla || 'পদার্থবিজ্ঞান',
+            chapter: chapter || q.chapter
+          });
+        }
+
+        setGeneratedQuestions(uniqueQs);
+        if (data.message) {
+          setNotification(data.message);
+        } else {
+          setNotification(`জিমিনি সফলভাবে ${uniqueQs.length}টি স্বতন্ত্র ও ইউনিক প্রশ্ন তৈরি করেছে! নিচে দেখে ব্যাংকে সেভ করুন।`);
+        }
+      } else {
+        setNotification(data?.error || 'এআই সার্ভার সাময়িক ব্যস্ত রয়েছে। কয়েক মুহূর্ত পর আবার চেষ্টা করুন।');
+      }
+    } catch (e) {
+      setNotification('কানেকশন সমস্যা হয়েছে। ইন্টারনেট বা সার্ভার চেক করে আবার চেষ্টা করুন।');
+    } finally {
+      setIsGeminiLoading(false);
+    }
+  };
+
+  // Copy standard prompt template to use on external gemini.google.com for 35 questions
+  const handleCopyGeminiPrompt = () => {
+    const promptTemplate = `তুমি শীর্ষ ভর্তি পরীক্ষার সিনিয়র প্রশ্ন প্রণেতা।
+আমার জন্য ২০২৬-২৭ সেশনের ভর্তি পরীক্ষার অনুরূপ পূর্ণাঙ্গ ৩৫টি প্রশ্ন (MCQ) তৈরি করো।
+
+বিষয় ও অধ্যায়: [এখানে লিখুন, যেমন: পদার্থবিজ্ঞান গতিবিদ্যা বা রসায়ন গুণগত রসায়ন]
+
+হুবহু প্রতিটি প্রশ্নের ফরম্যাট এমন দাও:
+১. প্রশ্ন...
+ক) ...
+খ) ...
+গ) ...
+ঘ) ...
+সঠিক উত্তর: [ক/খ/গ/ঘ]
+ব্যাখ্যা: [ধাপে ধাপে সমাধান ও সূত্র]
+শর্টকাট: [এডমিশন টেকনিক]
+
+(এভাবে ১ থেকে ৩৫ পর্যন্ত মোট ৩৫টি প্রশ্ন তৈরি করো)`;
+
+    navigator.clipboard.writeText(promptTemplate);
+    setCopiedPrompt(true);
+    setTimeout(() => setCopiedPrompt(false), 2500);
+  };
+
+  // Submit manual form
+  const handleSubmitManual = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!stem || !optA || !optB || !optC || !optD) return;
+    if (!stem.trim()) {
+      alert('অনুগ্রহ করে প্রশ্ন লিখুন।');
+      return;
+    }
+    if (options.some(opt => !opt.trim())) {
+      alert('অনুগ্রহ করে ৪টি অপশনই পূরণ করুন।');
+      return;
+    }
 
-    const newQ: Question = {
-      id: `custom_${Date.now()}`,
-      subject,
-      chapter: chapter || 'সাধারণ অধ্যায়',
-      stem,
-      options: [optA, optB, optC, optD],
+    const newQuestion: Question = {
+      id: `custom-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      stem: stem.trim(),
+      options: [
+        stripOptionPrefix(options[0]).trim(),
+        stripOptionPrefix(options[1]).trim(),
+        stripOptionPrefix(options[2]).trim(),
+        stripOptionPrefix(options[3]).trim(),
+      ],
       correctAnswer,
-      explanation,
-      university,
+      explanation: explanation.trim() || 'এই প্রশ্নের জন্য সরাসরি পাঠ্যপুস্তকের সূত্রাবলি প্রযোজ্য।',
+      shortcutTip: shortcutTip.trim() || undefined,
+      subject,
+      subjectBangla: subjectNames[subject],
+      chapter: chapter.trim() || 'সাধারণ এডমিশন টপিক',
+      universityTag: universityTag.trim() || 'ভর্তি পরীক্ষা স্পেশাল',
+      difficulty,
     };
 
-    saveCustomQuestion(newQ);
-    setSuccessMsg(true);
+    saveCustomQuestion(newQuestion);
+    setNotification('প্রশ্ন সফলভাবে এডমিশন প্রশ্ন ব্যাংকে যুক্ত হয়েছে!');
     setTimeout(() => {
-      onAdded();
+      setNotification(null);
+      onQuestionAdded();
       onClose();
     }, 1200);
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-      <div className="glass-panel-elevated neon-border-violet rounded-3xl p-6 sm:p-8 max-w-xl w-full space-y-6 my-8">
-        <div className="flex items-center justify-between pb-4 border-b border-violet-500/30">
-          <h3 className="text-lg font-black text-white flex items-center gap-2">
-            <PlusCircle className="w-5 h-5 text-cyan-400" />
-            <span>নতুন প্রশ্ন যুক্ত করুন</span>
-          </h3>
-          <button onClick={onClose} className="p-2 rounded-xl glass-panel text-slate-400 hover:text-white cursor-pointer">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {successMsg ? (
-          <div className="py-12 text-center space-y-3">
-            <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto animate-bounce" />
-            <h4 className="text-base font-bold text-white">প্রশ্ন সফলভাবে যুক্ত হয়েছে!</h4>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">বিষয়</label>
-                <select
-                  value={subject}
-                  onChange={e => setSubject(e.target.value as Subject)}
-                  className="w-full p-3 rounded-xl glass-panel border border-violet-500/40 text-white bg-slate-900 cursor-pointer"
-                >
-                  <option value="physics">পদার্থবিজ্ঞান</option>
-                  <option value="chemistry">রসায়ন</option>
-                  <option value="math">উচ্চতর গণিত</option>
-                  <option value="biology">জীববিজ্ঞান</option>
-                  <option value="bangla">বাংলা</option>
-                  <option value="english">ইংরেজি</option>
-                  <option value="ict_gk">আইসিটি ও সাধারণ জ্ঞান</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">বিশ্ববিদ্যালয় স্ট্যান্ডার্ড</label>
-                <select
-                  value={university}
-                  onChange={e => setUniversity(e.target.value as University)}
-                  className="w-full p-3 rounded-xl glass-panel border border-violet-500/40 text-white bg-slate-900 cursor-pointer"
-                >
-                  <option value="DU">ঢাকা বিশ্ববিদ্যালয় (DU)</option>
-                  <option value="GST">গুচ্ছ (GST)</option>
-                  <option value="BUET">বুয়েট ও ইঞ্জিনিয়ারিং</option>
-                  <option value="MEDICAL">মেডিকেল</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-slate-300 font-bold mb-1">অধ্যায়ের নাম</label>
-              <input
-                type="text"
-                placeholder="যেমন: ভেক্টর বা নিউটনীয় বলবিদ্যা"
-                value={chapter}
-                onChange={e => setChapter(e.target.value)}
-                className="w-full p-3 rounded-xl glass-panel border border-violet-500/40 text-white bg-slate-900"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-300 font-bold mb-1">প্রশ্নের বিবরণ (Stem)</label>
-              <textarea
-                rows={3}
-                required
-                placeholder="প্রশ্ন এখানে লিখুন..."
-                value={stem}
-                onChange={e => setStem(e.target.value)}
-                className="w-full p-3 rounded-xl glass-panel border border-violet-500/40 text-white bg-slate-900"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">অপশন ক (A)</label>
-                <input type="text" required value={optA} onChange={e => setOptA(e.target.value)} className="w-full p-2.5 rounded-xl glass-panel border border-violet-500/40 text-white bg-slate-900" />
-              </div>
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">অপশন খ (B)</label>
-                <input type="text" required value={optB} onChange={e => setOptB(e.target.value)} className="w-full p-2.5 rounded-xl glass-panel border border-violet-500/40 text-white bg-slate-900" />
-              </div>
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">অপশন গ (C)</label>
-                <input type="text" required value={optC} onChange={e => setOptC(e.target.value)} className="w-full p-2.5 rounded-xl glass-panel border border-violet-500/40 text-white bg-slate-900" />
-              </div>
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">অপশন ঘ (D)</label>
-                <input type="text" required value={optD} onChange={e => setOptD(e.target.value)} className="w-full p-2.5 rounded-xl glass-panel border border-violet-500/40 text-white bg-slate-900" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">সঠিক উত্তর নির্বাচন করুন</label>
-                <select
-                  value={correctAnswer}
-                  onChange={e => setCorrectAnswer(Number(e.target.value))}
-                  className="w-full p-3 rounded-xl glass-panel border border-violet-500/40 text-white bg-slate-900 cursor-pointer font-bold text-emerald-400"
-                >
-                  <option value={0}>অপশন ক (A)</option>
-                  <option value={1}>অপশন খ (B)</option>
-                  <option value={2}>অপশন গ (C)</option>
-                  <option value={3}>অপশন ঘ (D)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">বিস্তারিত ব্যাখ্যা (ঐচ্ছিক)</label>
-                <input
-                  type="text"
-                  placeholder="সঠিক উত্তরের ব্যাখ্যা..."
-                  value={explanation}
-                  onChange={e => setExplanation(e.target.value)}
-                  className="w-full p-3 rounded-xl glass-panel border border-violet-500/40 text-white bg-slate-900"
-                />
-              </div>
-            </div>
-
-            <div className="pt-3">
-              <button
-                type="submit"
-                className="w-full py-3.5 rounded-xl bg-linear-to-r from-emerald-400 via-teal-400 to-cyan-400 hover:brightness-110 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/30 cursor-pointer"
-              >
-                প্রশ্ন সংরক্ষণ করুন
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
-  );
-};
-                                                                                   
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
+      <div className="relative w-full max-w-4xl rounded-3xl glass-panel-elevated neon-border-violet shadow-2
+         
