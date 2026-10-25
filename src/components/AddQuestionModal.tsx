@@ -1,26 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { Question, Subject } from '../types/exam';
+import { Question, Subject, University } from '../types/exam';
 import { saveCustomQuestion } from '../services/questionService';
 import { parsePastedQuestionText, parseBulkQuestionsText, stripOptionPrefix } from '../utils/questionParser';
 import { CHAPTERS_DATA } from '../data/chaptersData';
 import {
   X,
+  PlusCircle,
   Sparkles,
   CheckCircle2,
   FileText,
+  HelpCircle,
+  Lightbulb,
+  Zap,
+  BookOpen,
   ClipboardPaste,
   Copy,
   Send,
   Wand2,
+  ArrowRight,
+  Flame,
+  Layers,
   CheckCheck
 } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onAdded?: () => void;
-  onQuestionAdded?: () => void;
-  prefill?: { subject: Subject; chapter?: string };
+  onQuestionAdded: () => void;
   initialSubject?: Subject;
   initialChapter?: string;
 }
@@ -28,34 +34,29 @@ interface Props {
 export const AddQuestionModal: React.FC<Props> = ({
   isOpen,
   onClose,
-  onAdded,
   onQuestionAdded,
-  prefill,
   initialSubject,
   initialChapter,
 }) => {
   const [activeTab, setActiveTab] = useState<'gemini_direct' | 'smart_paste' | 'manual'>('gemini_direct');
 
-  const effectiveSubject = prefill?.subject || initialSubject || 'physics';
-  const effectiveChapter = prefill?.chapter || initialChapter || '';
-
-  const [subject, setSubject] = useState<Subject>(effectiveSubject);
-  const [chapter, setChapter] = useState(effectiveChapter);
+  const [subject, setSubject] = useState<Subject>(initialSubject || 'physics');
+  const [chapter, setChapter] = useState(initialChapter || '');
   const [stem, setStem] = useState('');
   const [options, setOptions] = useState<[string, string, string, string]>(['', '', '', '']);
   const [correctAnswer, setCorrectAnswer] = useState<number>(0);
-  const [universityTag] = useState("ভর্তি পরীক্ষা স্পেশাল");
+  const [universityTag, setUniversityTag] = useState("ভর্তি পরীক্ষা স্পেশাল");
   const [explanation, setExplanation] = useState('');
   const [shortcutTip, setShortcutTip] = useState('');
-  const [difficulty] = useState<'সহজ' | 'মাঝারি' | 'মানসম্মত ভর্তি পরীক্ষা'>('মানসম্মত ভর্তি পরীক্ষা');
+  const [difficulty, setDifficulty] = useState<'সহজ' | 'মাঝারি' | 'মানসম্মত ভর্তি পরীক্ষা'>('মানসম্মত ভর্তি পরীক্ষা');
 
   const [pastedRawText, setPastedRawText] = useState('');
   const [pasteFeedback, setPasteFeedback] = useState<string | null>(null);
   const [parsedBulkQuestions, setParsedBulkQuestions] = useState<Question[]>([]);
 
   const [userGeminiPrompt, setUserGeminiPrompt] = useState(
-    effectiveChapter
-      ? `বিষয় ও '${effectiveChapter}' অধ্যায় থেকে ২০২৬-২৭ সেশনের ভর্তি পরীক্ষার অনুরূপ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো`
+    initialChapter
+      ? `বিষয় ও '${initialChapter}' অধ্যায় থেকে ২০২৬-২৭ সেশনের ভর্তি পরীক্ষার অনুরূপ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো`
       : 'পদার্থবিজ্ঞান ও রসায়ন থেকে ভর্তি পরীক্ষার অনুরূপ পূর্ণাঙ্গ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো'
   );
   const [geminiCount, setGeminiCount] = useState<number>(35);
@@ -77,15 +78,13 @@ export const AddQuestionModal: React.FC<Props> = ({
 
   useEffect(() => {
     if (isOpen) {
-      const sub = prefill?.subject || initialSubject;
-      const chap = prefill?.chapter || initialChapter;
-      if (sub) {
-        setSubject(sub);
+      if (initialSubject) {
+        setSubject(initialSubject);
       }
-      if (chap) {
-        setChapter(chap);
-        const subName = subjectNames[sub || subject] || 'বিজ্ঞান';
-        setUserGeminiPrompt(`${subName} বিষয়ের '${chap}' অধ্যায় থেকে ২০২৬-২৭ সেশনের ভর্তি পরীক্ষার অনুরূপ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো`);
+      if (initialChapter) {
+        setChapter(initialChapter);
+        const subName = subjectNames[initialSubject || subject] || 'বিজ্ঞান';
+        setUserGeminiPrompt(`${subName} বিষয়ের '${initialChapter}' অধ্যায় থেকে ২০২৬-২৭ সেশনের ভর্তি পরীক্ষার অনুরূপ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো`);
       } else {
         setChapter('');
         setUserGeminiPrompt('পদার্থবিজ্ঞান ও রসায়ন থেকে ভর্তি পরীক্ষার অনুরূপ পূর্ণাঙ্গ ৩৫টি প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি করো');
@@ -95,7 +94,7 @@ export const AddQuestionModal: React.FC<Props> = ({
       setPastedRawText('');
       setPasteFeedback(null);
     }
-  }, [isOpen, prefill, initialSubject, initialChapter]);
+  }, [isOpen, initialSubject, initialChapter]);
 
   if (!isOpen) return null;
 
@@ -103,12 +102,6 @@ export const AddQuestionModal: React.FC<Props> = ({
     const updated = [...options] as [string, string, string, string];
     updated[index] = val;
     setOptions(updated);
-  };
-
-  const handleSuccessAction = () => {
-    if (onQuestionAdded) onQuestionAdded();
-    if (onAdded) onAdded();
-    onClose();
   };
 
   const handleParsePastedText = () => {
@@ -155,7 +148,8 @@ export const AddQuestionModal: React.FC<Props> = ({
     setNotification(`অভিনন্দন! একসাথে ${parsedBulkQuestions.length}টি প্রশ্নই সরাসরি প্রশ্ন ব্যাংকে যুক্ত হয়েছে!`);
     setTimeout(() => {
       setNotification(null);
-      handleSuccessAction();
+      onQuestionAdded();
+      onClose();
     }, 1500);
   };
 
@@ -171,7 +165,8 @@ export const AddQuestionModal: React.FC<Props> = ({
     setNotification(`অভিনন্দন! একসাথে ${generatedQuestions.length}টি প্রশ্নই সরাসরি প্রশ্ন ব্যাংকে যুক্ত হয়েছে!`);
     setTimeout(() => {
       setNotification(null);
-      handleSuccessAction();
+      onQuestionAdded();
+      onClose();
     }, 1500);
   };
 
@@ -282,27 +277,28 @@ export const AddQuestionModal: React.FC<Props> = ({
     setNotification('প্রশ্ন সফলভাবে এডমিশন প্রশ্ন ব্যাংকে যুক্ত হয়েছে!');
     setTimeout(() => {
       setNotification(null);
-      handleSuccessAction();
+      onQuestionAdded();
+      onClose();
     }, 1200);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto">
-      <div className="relative w-full max-w-4xl rounded-3xl bg-slate-900 border border-violet-500/30 shadow-2xl p-5 sm:p-7 text-white my-8 max-h-[90vh] overflow-y-auto">
-        <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-cyan-400 via-fuchsia-500 to-emerald-400" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
+      <div className="relative w-full max-w-4xl rounded-3xl glass-panel-elevated neon-border-violet shadow-2xl p-5 sm:p-7 text-white my-8 max-h-[90vh] overflow-y-auto">
+        <div className="absolute top-0 inset-x-0 h-1 bg-linear-to-r from-cyan-400 via-fuchsia-500 to-emerald-400" />
 
         <div className="flex items-center justify-between pb-4 border-b border-violet-500/20">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-400 via-teal-400 to-emerald-400 text-slate-950 flex items-center justify-center shadow-lg">
+            <div className="w-10 h-10 rounded-2xl bg-linear-to-tr from-cyan-400 via-teal-400 to-emerald-400 text-slate-950 flex items-center justify-center shadow-lg shadow-cyan-500/30">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-extrabold text-base sm:text-lg text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-white to-pink-200">
+                <h3 className="font-extrabold text-base sm:text-lg text-transparent bg-clip-text bg-linear-to-r from-cyan-200 via-white to-pink-200">
                   {chapter ? `'${chapter}' অধ্যায়ে প্রশ্ন যোগ করুন (AQ)` : 'একসাথে ৩৫টি প্রশ্ন এড ও জিমিনি এআই জেনারেটর'}
                 </h3>
                 {chapter ? (
-                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-violet-500/20 text-cyan-300 border border-cyan-500/40">
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-violet-500/20 text-cyan-300 border border-cyan-500/40 flex items-center gap-1 shadow-sm">
                     <span>📌 অধ্যায়: {chapter} ({subjectNames[subject] || 'বিজ্ঞান'})</span>
                   </span>
                 ) : (
@@ -311,6 +307,11 @@ export const AddQuestionModal: React.FC<Props> = ({
                   </span>
                 )}
               </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                {chapter 
+                  ? `${subjectNames[subject] || 'বিজ্ঞান'} বিষয়ের '${chapter}' অধ্যায়ের জন্য জিমিনি দিয়ে ৩৫টি প্রশ্ন তৈরি করুন অথবা পেস্ট করুন`
+                  : 'জিমিনিকে বলে এক ক্লিকে পূর্ণাঙ্গ ৩৫টি প্রশ্ন তৈরি করুন অথবা ৩৫টি প্রশ্নের টেক্সট একবারে পেস্ট করুন'}
+              </p>
             </div>
           </div>
           <button
@@ -322,17 +323,17 @@ export const AddQuestionModal: React.FC<Props> = ({
         </div>
 
         {notification && (
-          <div className="my-4 p-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold text-center">
+          <div className="my-4 p-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold text-center animate-in fade-in shadow-sm shadow-emerald-500/20">
             {notification}
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-1.5 p-1.5 rounded-2xl bg-slate-950 border border-violet-500/30 my-4 text-xs font-bold">
+        <div className="grid grid-cols-3 gap-1.5 p-1.5 rounded-2xl glass-panel border border-violet-500/30 my-4 text-xs font-bold">
           <button
             onClick={() => setActiveTab('gemini_direct')}
             className={`py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
               activeTab === 'gemini_direct'
-                ? 'bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 font-black shadow-md'
+                ? 'bg-linear-to-r from-emerald-400 to-teal-400 text-slate-950 font-black shadow-md shadow-emerald-500/30'
                 : 'text-slate-300 hover:text-white hover:bg-white/10'
             }`}
           >
@@ -344,7 +345,7 @@ export const AddQuestionModal: React.FC<Props> = ({
             onClick={() => setActiveTab('smart_paste')}
             className={`py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
               activeTab === 'smart_paste'
-                ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black shadow-md'
+                ? 'bg-linear-to-r from-cyan-400 to-blue-500 text-slate-950 font-black shadow-md shadow-cyan-500/30'
                 : 'text-slate-300 hover:text-white hover:bg-white/10'
             }`}
           >
@@ -356,7 +357,7 @@ export const AddQuestionModal: React.FC<Props> = ({
             onClick={() => setActiveTab('manual')}
             className={`py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
               activeTab === 'manual'
-                ? 'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white font-black shadow-md'
+                ? 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white font-black shadow-md shadow-purple-500/30'
                 : 'text-slate-300 hover:text-white hover:bg-white/10'
             }`}
           >
@@ -367,7 +368,34 @@ export const AddQuestionModal: React.FC<Props> = ({
 
         {activeTab === 'gemini_direct' && (
           <div className="space-y-4 text-xs">
-            <div className="p-4 rounded-2xl bg-slate-950 border border-indigo-500/30">
+            <div>
+              <div className="text-[11px] text-slate-400 mb-1.5 font-medium">ক্লিক করে ৩৫ প্রশ্নের রেডিমেড নির্দেশ বাছুন:</div>
+              <div className="flex flex-wrap gap-1.5">
+                {(chapter ? [
+                  `'${chapter}' অধ্যায়ের সর্বোচ্চ কমন ৩৫টি প্রশ্ন`,
+                  `'${chapter}' অধ্যায় থেকে স্ট্যান্ডার্ড প্যাটার্নের ৩৫টি প্রশ্ন`,
+                  `'${chapter}' শর্টকাট ও ট্রিকি প্রশ্নমালা`,
+                  `'${chapter}' বিগত বছরের স্ট্যান্ডার্ড প্রশ্নমালা`
+                ] : [
+                  'পদার্থবিজ্ঞান ও রসায়ন পূর্ণাঙ্গ বিজ্ঞানের ৩৫টি প্রশ্ন',
+                  'উচ্চতর গণিত ও জীববিজ্ঞান স্পেশাল ৩৫টি প্রশ্ন',
+                  'কমন সিলেবাসভিত্তিক পূর্ণাঙ্গ মডেল টেস্টের ৩৫টি প্রশ্ন',
+                  'উচ্চতর গণিত ক্যালকুলাস ও সরলরেখা থেকে ৩৫টি প্রশ্ন',
+                  'জীববিজ্ঞান ও রসায়ন স্পেশাল ৩৫টি প্রশ্ন'
+                ]).map((chip, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setUserGeminiPrompt(chip + ' তৈরি করো')}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] transition-colors cursor-pointer"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-linear-to-r from-indigo-950/60 to-purple-950/60 border border-indigo-500/30">
               <label className="block text-indigo-200 font-bold mb-1.5 text-sm flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4 text-indigo-400" />
                 <span>জিমিনিকে আপনার নির্দেশ দিন:</span>
@@ -377,7 +405,7 @@ export const AddQuestionModal: React.FC<Props> = ({
                 value={userGeminiPrompt}
                 onChange={e => setUserGeminiPrompt(e.target.value)}
                 placeholder="যেমন: গতিবিদ্যা ও গুণগত রসায়ন থেকে ৩৫টি প্রশ্ন অপশন ও ব্যাখ্যাসহ বানাও..."
-                className="w-full p-3 rounded-xl bg-slate-900 border border-indigo-500/40 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400 text-xs sm:text-sm leading-relaxed"
+                className="w-full p-3 rounded-xl bg-slate-900 border border-indigo-500/40 text-white placeholder-slate-500 focus:outline-hidden focus:border-indigo-400 text-xs sm:text-sm leading-relaxed"
               />
 
               <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -394,7 +422,7 @@ export const AddQuestionModal: React.FC<Props> = ({
                           : 'bg-slate-800 text-slate-400 hover:text-white'
                       }`}
                     >
-                      {cnt === 35 ? '🔥 ৩৫টি' : `${cnt}টি`}
+                      {cnt === 35 ? '🔥 ৩৫টি (পূর্ণাঙ্গ টেস্ট)' : `${cnt}টি`}
                     </button>
                   ))}
                 </div>
@@ -404,19 +432,20 @@ export const AddQuestionModal: React.FC<Props> = ({
                     type="button"
                     onClick={handleCopyGeminiPrompt}
                     className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold flex items-center gap-1 cursor-pointer"
+                    title="বাইরের জিমিনির জন্য ৩৫ প্রশ্নের প্রম্পট কপি"
                   >
                     <Copy className="w-3.5 h-3.5" />
-                    <span>{copiedPrompt ? 'কপি হয়েছে!' : 'প্রম্পট কপি'}</span>
+                    <span>{copiedPrompt ? 'কপি হয়েছে!' : '৩৫ প্রশ্নের প্রম্পট কপি'}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={handleAskGemini}
                     disabled={isGeminiLoading}
-                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-extrabold shadow-lg active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    className="px-6 py-2.5 rounded-xl bg-linear-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>{isGeminiLoading ? 'তৈরি হচ্ছে...' : `প্রশ্ন তৈরি করুন`}</span>
+                    <span>{isGeminiLoading ? 'জিমিনি তৈরি করছে...' : `একসাথে ${geminiCount}টি প্রশ্ন তৈরি করুন`}</span>
                   </button>
                 </div>
               </div>
@@ -428,58 +457,12 @@ export const AddQuestionModal: React.FC<Props> = ({
                   <div>
                     <h4 className="font-extrabold text-white text-sm flex items-center gap-1.5">
                       <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      <span>{generatedQuestions.length}টি প্রশ্ন তৈরি হয়েছে!</span>
+                      <span>জিমিনি সফলভাবে {generatedQuestions.length}টি প্রশ্ন তৈরি করেছে!</span>
                     </h4>
+                    <p className="text-xs text-slate-300">
+                      নিচের সবুজ বাটনে চাপ দিলে সবগুলো প্রশ্ন সরাসরি প্রশ্ন ব্যাংকে সেভ হয়ে যাবে।
+                    </p>
                   </div>
                   <button
                     onClick={handleSaveAllGenerated}
-                    className="px-6 py-3 rounded-xl bg-emerald-500 text-slate-950 font-extrabold text-xs sm:text-sm active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <CheckCheck className="w-4 h-4" />
-                    <span>ব্যাংকে সেভ করুন</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'smart_paste' && (
-          <div className="space-y-4 text-xs">
-            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800">
-              <textarea
-                rows={8}
-                value={pastedRawText}
-                onChange={e => setPastedRawText(e.target.value)}
-                placeholder="এখানে প্রশ্ন পেস্ট করুন..."
-                className="w-full p-3 rounded-xl bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-emerald-500 text-xs sm:text-sm leading-relaxed"
-              />
-              {pasteFeedback && (
-                <div className="mt-2 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
-                  {pasteFeedback}
-                </div>
-              )}
-              <div className="mt-4 flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleParsePastedText}
-                  className="px-6 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs shadow-lg cursor-pointer"
-                >
-                  পার্স ও আলাদা করুন
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'manual' && (
-          <form onSubmit={handleSubmitManual} className="space-y-4 text-xs">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">বিষয়</label>
-                <select
-                  value={subject}
-                  onChange={e => setSubject(e.target.value as Subject)}
-                  className="w-full p-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white"
-                >
-                  <option value="physics">পদার্থবিজ্ঞান</option>
+                    className="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs sm:text-sm shadow-xl shadow-emerald-500/20 acti
